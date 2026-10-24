@@ -12,8 +12,17 @@
 
     const normalize = path => (path === '/' ? '/index.html' : path);
 
+    // Every page of the staff console counts as "Staff console" in the main nav
+    const STAFF_PAGES = ['/review.html', '/dashboard.html', '/staff-orientation.html', '/participants.html',
+        '/lessons.html', '/homework.html', '/analytics.html'];
+
     function markCurrent() {
         nav.querySelectorAll('a').forEach(link => {
+            if (link.dataset.staffConsole) {
+                if (STAFF_PAGES.includes(window.location.pathname)) link.setAttribute('aria-current', 'page');
+                else link.removeAttribute('aria-current');
+                return;
+            }
             const url = new URL(link.href);
             const samePage = normalize(url.pathname) === normalize(window.location.pathname);
             // Survey links differ only by ?role=, so compare that too
@@ -64,7 +73,9 @@
             signOutButton.className = 'link-btn';
             signOutButton.textContent = 'Sign out';
             signOutButton.addEventListener('click', signOut);
-            slot.replaceChildren(divider, makeLink('/review.html', 'Staff review'), makeLink('/dashboard.html', 'Results'), signOutButton);
+            const consoleLink = makeLink('/review.html', 'Staff console');
+            consoleLink.dataset.staffConsole = 'true';
+            slot.replaceChildren(divider, consoleLink, signOutButton);
         } else {
             slot.replaceChildren(divider, makeLink('/login.html', 'Staff sign in', 'btn-signin'));
         }

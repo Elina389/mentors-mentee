@@ -11,7 +11,9 @@
  *                      with keyword matching. Mentor topic areas are the expertise
  *                      they ticked plus areas found in their own passion text.
  *                      1 shared area = 20, 2 = 30, 3+ = 40.
- * 2. Major (30)        Mentor's preferred majors include the student's major,
+ * 2. Major (30)        Matched by broad field, not exact major: Computer Science and
+ *                      Data Science are both "Computing & Data" (see MAJOR_FIELDS).
+ *                      The mentor's preferred fields include the student's field,
  *                      or the mentor is open to any major.
  * 3. Style (15)        Same mentorship style, mentor is adaptable, or the student
  *                      is open to any style.
@@ -24,7 +26,34 @@
  * "challenges" and "goals" on the student form are not used for matching.
  */
 
+// Majors are matched by broad field, so related majors count as the same thing.
+// Field name -> the specific majors in it (the "Engineering" field also covers
+// the old "Engineering (Other)" choice on the mentor form).
+const MAJOR_FIELDS = {
+    'Computing & Data': ['Computer Science', 'Software Engineering', 'Data Science', 'Computer Engineering'],
+    'Engineering': ['Electrical Engineering', 'Mechanical Engineering', 'Engineering'],
+    'Business': ['Business Administration'],
+    'Life & Health Sciences': ['Biology', 'Psychology'],
+    'Other': ['Other']
+};
+
+// Any major name, or a field name itself -> its field
+const FIELD_LOOKUP = new Map();
+for (const [field, majors] of Object.entries(MAJOR_FIELDS)) {
+    FIELD_LOOKUP.set(field, field);
+    majors.forEach(major => FIELD_LOOKUP.set(major, field));
+}
+
 class MatchingSystem {
+    /**
+     * The field a major (or a field name) belongs to, or null if unknown.
+     * @param {string} value
+     * @returns {string|null}
+     */
+    static majorFieldOf(value) {
+        return FIELD_LOOKUP.get(value) || null;
+    }
+
     /**
      * @param {Object[]} students - Student responses
      * @param {Object[]} mentors - Mentor responses
@@ -34,10 +63,10 @@ class MatchingSystem {
         this.mentors = mentors;
 
         this.weights = {
-            passion: 40,
-            major: 30,
+            passion: 10,
+            major: 40,
             style: 15,
-            availability: 10
+            availability: 80
         };
 
         // A student-mentor pair with a percentage at or above this is a match
@@ -234,20 +263,20 @@ class MatchingSystem {
     }
 
     /**
-     * Student major vs mentor preferred majors.
+     * Student major vs mentor preferred majors, compared by broad field.
+     * A mentor who wants "Computer Science" students (or the "Computing & Data"
+     * field) matches Data Science students too. Mentors saved before the fields
+     * existed still work, because their specific majors map to a field.
      */
     calculateMajorMatch(student, mentor) {
         if (!mentor.preferredMajors) return 0;
+        if (mentor.preferredMajors.includes('Any')) return this.weights.major;
 
-        // The mentor form offers a single "Engineering (Other)" option
-        const otherEngineering = ['Electrical Engineering', 'Mechanical Engineering'];
+        const studentField = MatchingSystem.majorFieldOf(student.major);
+        if (!studentField) return 0;
 
-        if (mentor.preferredMajors.includes(student.major) ||
-            mentor.preferredMajors.includes('Any') ||
-            (mentor.preferredMajors.includes('Engineering') && otherEngineering.includes(student.major))) {
-            return this.weights.major;
-        }
-        return 0;
+        const wantedFields = mentor.preferredMajors.map(major => MatchingSystem.majorFieldOf(major));
+        return wantedFields.includes(studentField) ? this.weights.major : 0;
     }
 
     /**
@@ -402,6 +431,8 @@ class MatchingSystem {
         return { auto: [], queue: [...withOptions, ...withoutOptions] };
     }
 }
+
+MatchingSystem.MAJOR_FIELDS = MAJOR_FIELDS;
 
 // Node export (used by matching-service.js and the scripts)
 if (typeof module !== 'undefined' && module.exports) {

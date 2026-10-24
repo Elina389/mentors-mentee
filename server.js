@@ -17,6 +17,7 @@ const store = require('./store.js');
 const MatchingSystem = require('./matching-algorithm.js');
 const matchingService = require('./matching-service.js');
 const auth = require('./auth.js');
+const consoleService = require('./console-service.js');
 
 const HOST = '127.0.0.1';
 const PORT = Number(process.env.PORT) || 3000;
@@ -27,6 +28,20 @@ const ALLOWED_HOSTS = new Set([`localhost:${PORT}`, `127.0.0.1:${PORT}`]);
 const STATIC_FILES = {
     '/': ['index.html', 'text/html; charset=utf-8'],
     '/index.html': ['index.html', 'text/html; charset=utf-8'],
+    '/console.css': ['console.css', 'text/css; charset=utf-8'],
+    '/console.js': ['console.js', 'text/javascript; charset=utf-8'],
+    '/staff-orientation.html': ['staff-orientation.html', 'text/html; charset=utf-8'],
+    '/staff-orientation.js': ['staff-orientation.js', 'text/javascript; charset=utf-8'],
+    '/participants.html': ['participants.html', 'text/html; charset=utf-8'],
+    '/participants.js': ['participants.js', 'text/javascript; charset=utf-8'],
+    '/lessons.html': ['lessons.html', 'text/html; charset=utf-8'],
+    '/lessons.js': ['lessons.js', 'text/javascript; charset=utf-8'],
+    '/homework.html': ['homework.html', 'text/html; charset=utf-8'],
+    '/homework.js': ['homework.js', 'text/javascript; charset=utf-8'],
+    '/analytics.html': ['analytics.html', 'text/html; charset=utf-8'],
+    '/analytics.js': ['analytics.js', 'text/javascript; charset=utf-8'],
+    '/orientation.html': ['orientation.html', 'text/html; charset=utf-8'],
+    '/orientation.js': ['orientation.js', 'text/javascript; charset=utf-8'],
     '/survey.html': ['survey.html', 'text/html; charset=utf-8'],
     '/login.html': ['login.html', 'text/html; charset=utf-8'],
     '/login.js': ['login.js', 'text/javascript; charset=utf-8'],
@@ -48,8 +63,13 @@ const STATIC_FILES = {
 const MAJORS = ['Computer Science', 'Software Engineering', 'Data Science', 'Computer Engineering',
     'Business Administration', 'Electrical Engineering', 'Mechanical Engineering', 'Psychology',
     'Biology', 'Other'];
-const MENTOR_MAJORS = ['Computer Science', 'Software Engineering', 'Data Science', 'Computer Engineering',
-    'Business Administration', 'Engineering', 'Psychology', 'Biology', 'Any'];
+// Mentors now choose broad fields. Specific majors are still accepted so a page that
+// was open before this change, and mentors saved earlier, keep working.
+const MENTOR_MAJORS = [
+    ...Object.keys(MatchingSystem.MAJOR_FIELDS),
+    ...Object.values(MatchingSystem.MAJOR_FIELDS).flat(),
+    'Any'
+].filter((value, index, all) => all.indexOf(value) === index);
 const YEARS = ['Freshman', 'Sophomore', 'Junior', 'Senior', 'Graduate'];
 const STUDENT_STYLES = ['Hands-on/Structured', 'Flexible/Guidance-based', 'Goal-oriented', 'Open to any'];
 const MENTOR_STYLES = ['Hands-on/Structured', 'Flexible/Guidance-based', 'Goal-oriented', 'Adaptable to student needs'];
@@ -306,6 +326,39 @@ async function handleLogout(req, res) {
     return sendJson(res, 200, { ok: true });
 }
 
+// ---------- Staff console (logic is in console-service.js) ----------
+
+/** Run a console-service call and send its result. Service errors carry their own status. */
+function consoleReply(res, fn) {
+    try {
+        return sendJson(res, 200, fn());
+    } catch (err) {
+        if (err instanceof consoleService.HttpError) {
+            return sendJson(res, err.status, { error: err.message, ...(err.details ? { details: err.details } : {}) });
+        }
+        throw err;
+    }
+}
+
+const consoleGet = fn => (req, res) => consoleReply(res, () => fn(req));
+
+const consolePost = fn => async (req, res) => {
+    const body = await readJsonObject(req, res);
+    if (body === undefined) return;
+    return consoleReply(res, () => fn(body));
+};
+
+function sendMatchesCsv(req, res) {
+    res.writeHead(200, {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': 'attachment; filename="mentor-matches.csv"',
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff'
+    });
+    // The byte-order mark makes Excel read accented names correctly
+    res.end('\ufeff' + consoleService.matchesCsv());
+}
+
 // ---------- Routes ----------
 // staff: true means a signed-in staff session is required (otherwise 401).
 
@@ -321,11 +374,30 @@ const ROUTES = [
     { method: 'POST', path: '/api/matching/run',    staff: true,  handler: handleRunMatching },
     { method: 'POST', path: '/api/review/decision', staff: true,  handler: handleDecision },
     { method: 'POST', path: '/api/review/skip',     staff: true,  handler: handleSkip },
-    { method: 'POST', path: '/api/review/unskip',   staff: true,  handler: handleUnskip }
+    { method: 'POST', path: '/api/review/unskip',   staff: true,  handler: handleUnskip },
+
+    // Mentors and mentees read the orientation page without signing in, but only what staff turned on
+    { method: 'GET',  path: '/api/orientation',            staff: false, handler: consoleGet(req => consoleService.publicOrientation(new URL(req.url, 'http://localhost').searchParams.get('for'))) },
+
+    { method: 'GET',  path: '/api/console/summary',        staff: true,  handler: consoleGet(() => consoleService.getSummary()) },
+    { method: 'GET',  path: '/api/console/participants',   staff: true,  handler: consoleGet(() => consoleService.getParticipants()) },
+    { method: 'GET',  path: '/api/console/lessons',        staff: true,  handler: consoleGet(() => consoleService.getLessons()) },
+    { method: 'POST', path: '/api/console/cadence',        staff: true,  handler: consolePost(body => consoleService.setCadence(body)) },
+    { method: 'POST', path: '/api/console/attendance',     staff: true,  handler: consolePost(body => consoleService.setAttendance(body)) },
+    { method: 'GET',  path: '/api/console/homework',       staff: true,  handler: consoleGet(() => consoleService.getHomework()) },
+    { method: 'POST', path: '/api/console/homework',       staff: true,  handler: consolePost(body => consoleService.setHomework(body)) },
+    { method: 'GET',  path: '/api/console/analytics',      staff: true,  handler: consoleGet(() => consoleService.getAnalytics()) },
+    { method: 'GET',  path: '/api/console/orientation',    staff: true,  handler: consoleGet(() => consoleService.getOrientation()) },
+    { method: 'POST', path: '/api/console/orientation',    staff: true,  handler: consolePost(body => consoleService.saveOrientation(body)) },
+    { method: 'POST', path: '/api/console/emails',         staff: true,  handler: consolePost(body => consoleService.setEmailsSent(body)) },
+    { method: 'GET',  path: '/api/console/matches.csv',    staff: true,  handler: sendMatchesCsv }
 ];
 
 // Pages only staff can open. Everyone else is sent to the sign-in page.
-const STAFF_PAGES = new Set(['/review.html', '/dashboard.html']);
+const STAFF_PAGES = new Set([
+    '/review.html', '/dashboard.html', '/staff-orientation.html', '/participants.html',
+    '/lessons.html', '/homework.html', '/analytics.html'
+]);
 
 function serveStatic(pathname, res, signedIn) {
     const entry = STATIC_FILES[pathname];

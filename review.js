@@ -226,7 +226,53 @@
 
         if (hasProposal) renderProposal(state.proposal, state.weights, state.threshold);
         else renderEmpty(state.stats);
+
+        // Keep the timeline, summary numbers and match-emails panel in step with this page
+        MM.refresh().then(renderEmails);
     }
+
+    // ---------- match emails (the app does not send email; staff record that they did) ----------
+
+    function renderEmails(summary) {
+        if (!summary) return;
+        const matches = summary.counts.matches;
+        const waiting = summary.counts.awaitingReview;
+        const sent = summary.emailsSentAt;
+        const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+        $('emailsPanel').hidden = false;
+        $('sendbar').className = sent ? 'sendbar sent' : 'sendbar';
+        $('sendMsg').textContent = sent
+            ? `Marked as sent on ${MM.fmt(sent)} for ${plural(matches, 'matched pair')}.`
+            : matches
+                ? `${plural(matches, 'matched pair')} ready for introduction emails.` + (waiting ? ` ${plural(waiting, 'student')} still in review.` : '')
+                : 'No matches yet.';
+        $('csvLink').hidden = matches === 0;
+        $('sendToggle').textContent = sent ? 'Undo' : 'Mark emails as sent';
+        $('sendToggle').disabled = !sent && matches === 0;
+        $('sendToggle').dataset.sent = sent ? 'true' : 'false';
+    }
+
+    $('sendToggle').addEventListener('click', async () => {
+        const button = $('sendToggle');
+        $('sendError').hidden = true;
+        button.disabled = true;
+        try {
+            const { ok, data } = await api('/api/console/emails', { sent: button.dataset.sent !== 'true' });
+            if (!ok) {
+                $('sendError').textContent = data.error || 'Could not save that.';
+                $('sendError').hidden = false;
+            }
+            renderEmails((await MM.refresh()) || null);
+        } catch (err) {
+            if (err.message !== 'Signed out') {
+                $('sendError').textContent = 'Could not reach the server. Make sure it is running (node server.js).';
+                $('sendError').hidden = false;
+            }
+        } finally {
+            button.disabled = false;
+        }
+    });
 
     // ---------- status, loading, acting ----------
 
