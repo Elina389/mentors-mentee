@@ -1,58 +1,49 @@
 /**
  * Mentor-Mentee Matching Algorithm
- * 
- * Uses weighted semantic matching to calculate compatibility scores.
- * 
- * ALGORITHM EXPLANATION:
- * =====================
- * 
- * This algorithm uses a weighted scoring system where each criterion contributes
- * a specific percentage to the overall match score. The total possible score is 100.
- * 
- * WEIGHTS:
- * --------
- * 1. Passion Analysis (40 points = 40% weight)
- *    - Analyzes student's open-ended passion description
- *    - Uses semantic keyword matching against mentor's expertise
- *    - Extracts concepts and topics from text
- *    - Example: "I love building AI systems" matches "Data Science & Analytics"
- * 
- * 2. Major Match (30 points = 30% weight)
- *    - Boolean match: student's major vs mentor's preferred majors
- *    - Exact match or mentor accepts "Any" major
- * 
- * 3. Mentorship Style (15 points = 15% weight)
- *    - Compares preferred mentoring approaches
- *    - Bonus if mentor is adaptable to any style
- * 
- * 4. Availability Match (10 points = 10% weight)
- *    - Meeting frequency: Weekly/Bi-weekly/Monthly/As needed
- *    - Available days: Monday-Sunday overlap
- *    - Higher score for more day matches
- *    - Optional field: partial points if only frequency matches
- * 
- * TOTAL: 100 points → converted to percentage (0-100%)
- * 
- * Note: The "challenges" and "goals" fields are NOT used in matching.
- * They are informational only, collected for administrators to understand
- * student needs when reviewing matches.
+ *
+ * Weighted scoring over the survey responses saved in data/students.json and
+ * data/mentors.json. `node match.js` or the staff review page run it and write
+ * data/matches.json.
+ *
+ * WEIGHTS (max 95 points, the percentage is score / 95)
+ * -----------------------------------------------------
+ * 1. Passion (40)      Student's open-ended passion text is turned into topic areas
+ *                      with keyword matching. Mentor topic areas are the expertise
+ *                      they ticked plus areas found in their own passion text.
+ *                      1 shared area = 20, 2 = 30, 3+ = 40.
+ * 2. Major (30)        Mentor's preferred majors include the student's major,
+ *                      or the mentor is open to any major.
+ * 3. Style (15)        Same mentorship style, mentor is adaptable, or the student
+ *                      is open to any style.
+ * 4. Availability (10) Up to 3 for matching meeting frequency, plus up to 7 for
+ *                      shared available days (3.5 per shared day). Days are optional.
+ *
+ * A pair with a percentage of 50 or more is matched automatically (plan(), step 1).
+ * Below 50, staff choose between a student's top two mentors (plan(), step 2).
+ *
+ * "challenges" and "goals" on the student form are not used for matching.
  */
 
 class MatchingSystem {
-    constructor() {
-        this.students = JSON.parse(localStorage.getItem('students') || '[]');
-        this.mentors = JSON.parse(localStorage.getItem('mentors') || '[]');
-        this.currentUser = null;
+    /**
+     * @param {Object[]} students - Student responses
+     * @param {Object[]} mentors - Mentor responses
+     */
+    constructor(students = [], mentors = []) {
+        this.students = students;
+        this.mentors = mentors;
 
-        // Define weights for each criterion
         this.weights = {
-            passion: 40,        // 40% - Most important
-            major: 30,          // 30% - Very important
-            style: 15,          // 15% - Moderately important
-            availability: 10    // 10% - Includes both frequency and days
+            passion: 40,
+            major: 30,
+            style: 15,
+            availability: 10
         };
 
-        // Define keyword mappings for semantic matching
+        // A student-mentor pair with a percentage at or above this is a match
+        this.matchThreshold = 50;
+
+        // Keyword -> topic areas (areas use the same names as the mentor expertise options)
         this.passionKeywords = {
             // Technology & Development
             'software': ['Software Development', 'Technical Skills', 'Career Development'],
@@ -62,7 +53,7 @@ class MatchingSystem {
             'build': ['Software Development', 'Entrepreneurship'],
             'app': ['Software Development', 'Product Management'],
             'web': ['Software Development', 'Technical Skills'],
-            
+
             // AI & Data
             'ai': ['Data Science & Analytics', 'Research & Academia'],
             'artificial intelligence': ['Data Science & Analytics', 'Research & Academia'],
@@ -71,7 +62,7 @@ class MatchingSystem {
             'data': ['Data Science & Analytics', 'Technical Skills'],
             'analytics': ['Data Science & Analytics', 'Career Development'],
             'science': ['Research & Academia', 'Data Science & Analytics'],
-            
+
             // Business & Entrepreneurship
             'startup': ['Entrepreneurship', 'Product Management'],
             'business': ['Entrepreneurship', 'Career Development'],
@@ -80,7 +71,7 @@ class MatchingSystem {
             'found': ['Entrepreneurship'],
             'innovate': ['Entrepreneurship', 'Product Management'],
             'product': ['Product Management', 'Career Development'],
-            
+
             // Research & Academia
             'research': ['Research & Academia', 'Graduate School Applications'],
             'phd': ['Research & Academia', 'Graduate School Applications'],
@@ -89,13 +80,13 @@ class MatchingSystem {
             'professor': ['Research & Academia'],
             'paper': ['Research & Academia'],
             'study': ['Research & Academia', 'Graduate School Applications'],
-            
+
             // Leadership & Management
             'lead': ['Leadership & Management', 'Career Development'],
             'manage': ['Leadership & Management', 'Product Management'],
             'team': ['Leadership & Management', 'Career Development'],
             'executive': ['Leadership & Management', 'Career Development'],
-            
+
             // Career & Skills
             'career': ['Career Development', 'Networking'],
             'job': ['Career Development', 'Networking'],
@@ -103,13 +94,13 @@ class MatchingSystem {
             'learn': ['Technical Skills', 'Career Development'],
             'network': ['Networking', 'Career Development'],
             'interview': ['Career Development', 'Networking'],
-            
+
             // Healthcare & Medicine
             'health': ['Healthcare', 'Research & Academia'],
             'medical': ['Healthcare', 'Research & Academia'],
             'medicine': ['Healthcare', 'Graduate School Applications'],
             'hospital': ['Healthcare'],
-            
+
             // Environmental & Social
             'environment': ['Environmental Sustainability', 'Research & Academia'],
             'sustainability': ['Environmental Sustainability', 'Entrepreneurship'],
@@ -119,385 +110,300 @@ class MatchingSystem {
             'impact': ['Social Impact', 'Entrepreneurship'],
             'nonprofit': ['Social Impact', 'Entrepreneurship'],
             'community': ['Social Impact', 'Networking'],
-            
+
             // Finance
             'finance': ['Finance & Investment', 'Data Science & Analytics'],
             'investment': ['Finance & Investment'],
             'fintech': ['Finance & Investment', 'Software Development'],
             'banking': ['Finance & Investment', 'Career Development'],
-            
+
             // Creative & Design
             'design': ['Product Management', 'Technical Skills'],
             'creative': ['Product Management', 'Entrepreneurship'],
             'ux': ['Product Management', 'Technical Skills'],
             'ui': ['Product Management', 'Technical Skills']
         };
+
+        // Pre-compile keyword patterns. Short keywords (ai, ml, ux, ui, app) must
+        // match a whole word, otherwise "ai" matches "maintain" and "ui" matches
+        // "build". Longer keywords match word prefixes so "build" catches "building".
+        this.passionPatterns = Object.entries(this.passionKeywords).map(([keyword, areas]) => {
+            const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const pattern = keyword.length <= 3 ? `\\b${escaped}s?\\b` : `\\b${escaped}`;
+            return { regex: new RegExp(pattern), areas };
+        });
     }
 
     /**
-     * Calculate match score between a student and mentor
-     * Uses weighted semantic matching
-     * 
-     * @param {Object} student - Student profile
-     * @param {Object} mentor - Mentor profile
-     * @returns {Object} Match result with score and details
+     * Turn free text into a set of topic areas using the keyword map.
+     * @param {string} text
+     * @returns {Set<string>}
+     */
+    extractAreas(text) {
+        const areas = new Set();
+        if (!text || !text.trim()) return areas;
+
+        const lower = text.toLowerCase();
+        for (const { regex, areas: keywordAreas } of this.passionPatterns) {
+            if (regex.test(lower)) {
+                keywordAreas.forEach(area => areas.add(area));
+            }
+        }
+        return areas;
+    }
+
+    /**
+     * Topic areas a mentor covers: ticked expertise plus areas in their passion text.
+     * @param {Object} mentor
+     * @returns {Set<string>}
+     */
+    getMentorAreas(mentor) {
+        const areas = this.extractAreas(mentor.passion);
+        (mentor.expertise || []).forEach(area => areas.add(area));
+        return areas;
+    }
+
+    /**
+     * Score one student-mentor pair.
+     * @returns {Object} { score, maxScore, percentage, isMatch, details, breakdown }
      */
     calculateMatchScore(student, mentor) {
         let score = 0;
-        let details = [];
-        let breakdown = {};
+        const details = [];
+        const breakdown = { passion: 0, major: 0, style: 0, availability: 0 };
 
-        // 1. Passion Analysis (40 points)
-        const passionScore = this.calculatePassionMatch(student, mentor);
-        if (passionScore.score > 0) {
-            score += passionScore.score;
-            breakdown.passion = passionScore.score;
-            details.push(`Passion alignment: ${passionScore.matchedAreas.join(', ')}`);
-        } else {
-            breakdown.passion = 0;
+        // 1. Passion
+        const passion = this.calculatePassionMatch(student, mentor);
+        if (passion.score > 0) {
+            score += passion.score;
+            breakdown.passion = passion.score;
+            details.push(`Passion alignment: ${passion.matchedAreas.join(', ')}`);
         }
 
-        // 2. Major Match (30 points)
+        // 2. Major
         const majorScore = this.calculateMajorMatch(student, mentor);
         if (majorScore > 0) {
             score += majorScore;
             breakdown.major = majorScore;
             details.push('Major aligned');
-        } else {
-            breakdown.major = 0;
         }
 
-        // 3. Mentorship Style Compatibility (15 points)
+        // 3. Mentorship style
         const styleScore = this.calculateStyleMatch(student, mentor);
         if (styleScore > 0) {
             score += styleScore;
             breakdown.style = styleScore;
             details.push('Mentorship style compatible');
-        } else {
-            breakdown.style = 0;
         }
 
-        // 4. Availability Match (10 points) - Frequency + Days
-        const availabilityScore = this.calculateAvailabilityMatch(student, mentor);
-        if (availabilityScore.score > 0) {
-            score += availabilityScore.score;
-            breakdown.availability = availabilityScore.score;
-            if (availabilityScore.frequencyMatch && availabilityScore.daysMatch > 0) {
-                details.push(`Available ${availabilityScore.daysMatch} same day(s)`);
-            } else if (availabilityScore.frequencyMatch) {
-                details.push('Meeting frequency aligned');
-            } else if (availabilityScore.daysMatch > 0) {
-                details.push(`Available ${availabilityScore.daysMatch} same day(s)`);
-            }
-        } else {
-            breakdown.availability = 0;
+        // 4. Availability (frequency + days)
+        const availability = this.calculateAvailabilityMatch(student, mentor);
+        if (availability.score > 0) {
+            score += availability.score;
+            breakdown.availability = availability.score;
+            if (availability.frequencyMatch) details.push('Meeting frequency aligned');
+            if (availability.daysMatch > 0) details.push(`Available ${availability.daysMatch} same day(s)`);
         }
+
+        // Weights add up to 95, so divide by the real maximum: a perfect pair is 100%
+        const maxScore = Object.values(this.weights).reduce((sum, w) => sum + w, 0);
+        const percentage = Math.round((score / maxScore) * 100);
 
         return {
-            score: score,
-            maxScore: 100,
-            percentage: Math.round((score / 100) * 100),
-            details: details,
-            breakdown: breakdown
+            score,
+            maxScore,
+            percentage,
+            isMatch: percentage >= this.matchThreshold,
+            details,
+            breakdown
         };
     }
 
     /**
-     * Analyze passion text using semantic keyword matching
-     * Extracts concepts from student's passion description and matches to mentor expertise
-     * 
-     * @param {Object} student - Student profile
-     * @param {Object} mentor - Mentor profile
-     * @returns {Object} Score and matched areas
+     * Student passion areas vs mentor areas.
      */
     calculatePassionMatch(student, mentor) {
-        if (!student.passion || student.passion.trim() === '') {
-            return { score: 0, matchedAreas: [] };
-        }
+        const studentAreas = this.extractAreas(student.passion);
+        const mentorAreas = this.getMentorAreas(mentor);
+        const matchedAreas = [...studentAreas].filter(area => mentorAreas.has(area));
 
-        // Normalize passion text to lowercase
-        const passionText = student.passion.toLowerCase();
-        
-        // Extract potential expertise areas from passion text
-        const extractedAreas = new Set();
-        
-        // Match keywords in passion text to expertise areas
-        for (const [keyword, areas] of Object.entries(this.passionKeywords)) {
-            if (passionText.includes(keyword)) {
-                areas.forEach(area => extractedAreas.add(area));
-            }
-        }
-
-        // Count matches with mentor's expertise
-        const matchedAreas = [];
-        let matchCount = 0;
-        
-        if (mentor.expertise) {
-            mentor.expertise.forEach(expertise => {
-                if (extractedAreas.has(expertise)) {
-                    matchedAreas.push(expertise);
-                    matchCount++;
-                }
-            });
-        }
-
-        // Calculate score based on number of matches
-        // More matches = higher score (capped at max weight)
-        if (matchCount === 0) {
-            return { score: 0, matchedAreas: [] };
-        } else if (matchCount === 1) {
-            return { score: this.weights.passion * 0.5, matchedAreas }; // 20 points
-        } else if (matchCount === 2) {
-            return { score: this.weights.passion * 0.75, matchedAreas }; // 30 points
-        } else {
-            return { score: this.weights.passion, matchedAreas }; // 40 points (max)
-        }
+        if (matchedAreas.length === 0) return { score: 0, matchedAreas };
+        if (matchedAreas.length === 1) return { score: this.weights.passion * 0.5, matchedAreas };
+        if (matchedAreas.length === 2) return { score: this.weights.passion * 0.75, matchedAreas };
+        return { score: this.weights.passion, matchedAreas };
     }
 
     /**
-     * Check if student's major matches mentor's preferred majors
+     * Student major vs mentor preferred majors.
      */
     calculateMajorMatch(student, mentor) {
         if (!mentor.preferredMajors) return 0;
-        
-        if (mentor.preferredMajors.includes(student.major) || 
-            mentor.preferredMajors.includes('Any')) {
+
+        // The mentor form offers a single "Engineering (Other)" option
+        const otherEngineering = ['Electrical Engineering', 'Mechanical Engineering'];
+
+        if (mentor.preferredMajors.includes(student.major) ||
+            mentor.preferredMajors.includes('Any') ||
+            (mentor.preferredMajors.includes('Engineering') && otherEngineering.includes(student.major))) {
             return this.weights.major;
         }
         return 0;
     }
 
     /**
-     * Check mentorship style compatibility
+     * Mentorship style compatibility.
      */
     calculateStyleMatch(student, mentor) {
         if (!student.mentorStyle || !mentor.mentorshipStyle) return 0;
-        
-        if (student.mentorStyle === mentor.mentorshipStyle || 
+
+        if (student.mentorStyle === mentor.mentorshipStyle ||
             mentor.mentorshipStyle === 'Adaptable to student needs' ||
             student.mentorStyle === 'Open to any') {
             return this.weights.style;
         }
-        
         return 0;
     }
 
     /**
-     * Check meeting frequency compatibility
+     * Meeting frequency compatibility.
+     * @returns {boolean}
      */
     calculateMeetingMatch(student, mentor) {
-        if (!student.meetingPreference || !mentor.availability) return 0;
-        
-        if (student.meetingPreference === mentor.availability ||
-            student.meetingPreference === 'As needed') {
-            return true;
-        }
-        
-        return false;
+        if (!student.meetingPreference || !mentor.availability) return false;
+
+        return student.meetingPreference === mentor.availability ||
+            student.meetingPreference === 'As needed';
     }
 
     /**
-     * Calculate comprehensive availability match
-     * Considers both meeting frequency and available days
-     * 
-     * @param {Object} student - Student profile
-     * @param {Object} mentor - Mentor profile
-     * @returns {Object} Score and match details
+     * Availability: 3 points for frequency, up to 7 for shared days.
+     * Days are optional. If either side left them blank, no day points are given.
      */
     calculateAvailabilityMatch(student, mentor) {
-        const result = {
-            score: 0,
-            frequencyMatch: false,
-            daysMatch: 0
-        };
+        const result = { score: 0, frequencyMatch: false, daysMatch: 0 };
 
-        // Check frequency match (part 1)
-        const frequencyMatch = this.calculateMeetingMatch(student, mentor);
-        if (frequencyMatch) {
-            result.frequencyMatch = true;
-        }
+        result.frequencyMatch = this.calculateMeetingMatch(student, mentor);
 
-        // Check day overlap (part 2)
         const studentDays = student.availableDays || [];
         const mentorDays = mentor.availableDays || [];
-        
         if (studentDays.length > 0 && mentorDays.length > 0) {
-            // Both have specified days - count overlaps
-            const overlappingDays = studentDays.filter(day => mentorDays.includes(day));
-            result.daysMatch = overlappingDays.length;
-        } else if (studentDays.length === 0 && mentorDays.length === 0) {
-            // Neither specified days - give benefit of doubt
-            result.daysMatch = 0; // No bonus, but not penalized
+            result.daysMatch = studentDays.filter(day => mentorDays.includes(day)).length;
         }
-        // If only one specified days, no day match points
 
-        // Calculate score
-        // Split the 10 points: 3 for frequency, 7 for days
         let score = 0;
-        
-        // Frequency match: 0 or 3 points
-        if (result.frequencyMatch) {
-            score += 3;
-        }
-        
-        // Day match: 0-7 points based on overlap
-        if (result.daysMatch > 0) {
-            // Scale: 1 day = 3.5pts, 2+ days = 7pts (max)
-            score += Math.min(7, result.daysMatch * 3.5);
-        }
+        if (result.frequencyMatch) score += 3;
+        if (result.daysMatch > 0) score += Math.min(7, result.daysMatch * 3.5);
 
         result.score = Math.min(score, this.weights.availability);
-        
         return result;
     }
 
     /**
-     * Find all matches for a student, sorted by compatibility
-     * @param {Object} student - Student profile
-     * @param {number} limit - Maximum number of matches to return
-     * @returns {Array} Sorted array of matches
+     * Current state of the matching pool.
+     *  - matches (final): the student and the mentor are both taken out of the pool
+     *  - denials (staff said no): the mentor stays in the pool, but that exact
+     *    student-mentor pair is never offered again
+     *
+     * @param {Object[]} matches - [{ studentId, mentorId }]
+     * @param {Object[]} denials - [{ studentId, mentorIds: [...] }] (or a single mentorId)
      */
-    findMatches(student, limit = 5) {
-        const matches = this.mentors.map(mentor => ({
-            mentor: mentor,
-            match: this.calculateMatchScore(student, mentor)
-        }));
+    poolState(matches = [], denials = []) {
+        const matchedStudents = new Set();
+        const matchedMentors = new Set();
+        const deniedPairs = new Set();
+        const denialCounts = new Map();
 
-        // Sort by score (highest first)
-        matches.sort((a, b) => b.match.score - a.match.score);
-
-        return matches.slice(0, limit);
-    }
-
-    /**
-     * Save a student profile
-     */
-    saveStudent(student) {
-        student.id = Date.now();
-        student.timestamp = new Date().toISOString();
-        this.students.push(student);
-        localStorage.setItem('students', JSON.stringify(this.students));
-        this.currentUser = student;
-        return student;
-    }
-
-    /**
-     * Save a mentor profile
-     */
-    saveMentor(mentor) {
-        mentor.id = Date.now();
-        mentor.timestamp = new Date().toISOString();
-        this.mentors.push(mentor);
-        localStorage.setItem('mentors', JSON.stringify(this.mentors));
-        return mentor;
-    }
-
-    /**
-     * Get all mentors
-     */
-    getAllMentors() {
-        return this.mentors;
-    }
-
-    /**
-     * Get all students
-     */
-    getAllStudents() {
-        return this.students;
-    }
-
-    /**
-     * Clear all data (for testing)
-     */
-    clearData() {
-        this.students = [];
-        this.mentors = [];
-        this.currentUser = null;
-        localStorage.removeItem('students');
-        localStorage.removeItem('mentors');
-    }
-
-    /**
-     * Initialize with sample data for demonstration
-     */
-    initializeSampleData() {
-        if (this.mentors.length === 0) {
-            const sampleMentors = [
-                {
-                    id: 1,
-                    name: "Dr. Sarah Chen",
-                    email: "sarah.chen@techcompany.com",
-                    title: "Principal Software Engineer",
-                    company: "Tech Giant Inc.",
-                    field: "Tech/Software",
-                    yearsExperience: "15+ years",
-                    expertise: ["Software Development", "Data Science & Analytics", "Career Development", "Leadership & Management"],
-                    bio: "Passionate about helping the next generation of engineers. Led multiple teams and projects at Fortune 500 companies.",
-                    degree: "PhD",
-                    almaMater: "Stanford University",
-                    sjsuAlumnus: "No",
-                    canHelpWith: ["Career Guidance", "Technical Skills", "Networking", "Interview Preparation", "Resume Review"],
-                    menteeCapacity: "3-5",
-                    availability: "Bi-weekly",
-                    availableDays: ["Monday", "Wednesday", "Friday"],
-                    mentorshipStyle: "Adaptable to student needs",
-                    preferredMajors: ["Computer Science", "Software Engineering", "Data Science"],
-                    motivation: "I believe in giving back to the community and helping students navigate their career paths.",
-                    timestamp: new Date().toISOString()
-                },
-                {
-                    id: 2,
-                    name: "Marcus Rodriguez",
-                    email: "marcus.r@startup.io",
-                    title: "CTO & Co-Founder",
-                    company: "InnovateTech Startup",
-                    field: "Tech/Software",
-                    yearsExperience: "8-15 years",
-                    expertise: ["Entrepreneurship", "Product Management", "Software Development", "Career Development"],
-                    bio: "SJSU alum who founded two successful startups. Love helping students interested in entrepreneurship.",
-                    degree: "Master's",
-                    almaMater: "San Jose State University",
-                    sjsuAlumnus: "Yes",
-                    canHelpWith: ["Career Guidance", "Networking", "Industry Connections", "Technical Skills"],
-                    menteeCapacity: "2",
-                    availability: "Weekly",
-                    availableDays: ["Tuesday", "Thursday", "Saturday"],
-                    mentorshipStyle: "Goal-oriented",
-                    preferredMajors: ["Computer Science", "Business Administration", "Any"],
-                    motivation: "SJSU gave me my start - I want to help current students succeed.",
-                    timestamp: new Date().toISOString()
-                },
-                {
-                    id: 3,
-                    name: "Dr. Anita Patel",
-                    email: "anita.patel@research.edu",
-                    title: "Research Scientist",
-                    company: "AI Research Lab",
-                    field: "Tech/Software",
-                    yearsExperience: "8-15 years",
-                    expertise: ["Data Science & Analytics", "Research & Academia", "Graduate School Applications"],
-                    bio: "Research focus on machine learning and AI. Published 30+ papers. Happy to guide students interested in research or grad school.",
-                    degree: "PhD",
-                    almaMater: "MIT",
-                    sjsuAlumnus: "No",
-                    canHelpWith: ["Research Opportunities", "Graduate School Advice", "Technical Skills", "Career Guidance"],
-                    menteeCapacity: "3-5",
-                    availability: "Monthly",
-                    availableDays: ["Wednesday", "Friday"],
-                    mentorshipStyle: "Flexible/Guidance-based",
-                    preferredMajors: ["Computer Science", "Data Science", "Computer Engineering"],
-                    motivation: "I want to increase diversity in AI/ML research and help students from all backgrounds.",
-                    timestamp: new Date().toISOString()
-                }
-            ];
-            
-            this.mentors = sampleMentors;
-            localStorage.setItem('mentors', JSON.stringify(this.mentors));
+        for (const m of matches) {
+            matchedStudents.add(m.studentId);
+            matchedMentors.add(m.mentorId);
         }
+        for (const d of denials) {
+            if (d.decision && d.decision !== 'denied') continue;
+            const mentorIds = Array.isArray(d.mentorIds) ? d.mentorIds : [d.mentorId];
+            mentorIds.forEach(id => deniedPairs.add(`${d.studentId}|${id}`));
+            denialCounts.set(d.studentId, (denialCounts.get(d.studentId) || 0) + 1);
+        }
+        return { matchedStudents, matchedMentors, deniedPairs, denialCounts };
+    }
+
+    /**
+     * The plan from the current pool.
+     *
+     * Step 1, automatic: every pair at or above the match threshold is a candidate.
+     * Highest score first, a pair is matched if neither side is taken yet. So each
+     * student gets the highest-scoring mentor still free.
+     *
+     * Step 2, staff walk-through: only once step 1 has nothing left to do. Every
+     * student who is not matched gets one entry, in this order:
+     *   a. Students with options: their top two available mentors below the
+     *      threshold (they must share at least something, score > 0). Students who
+     *      staff have denied fewer times go first, so after a deny the student moves
+     *      to the back of the line. Within that, the closest to the threshold first.
+     *   b. Students with no option left: no mentor is available for them at the
+     *      moment. They follow, in submission order, with an empty `options` list.
+     *
+     * A denied pair is never offered again, but both mentors stay in the pool for
+     * other students. Ties go to the earlier submission.
+     *
+     * @returns {{ auto: Object[], queue: Object[] }}
+     *   auto:  [{ student, mentor, result }]
+     *   queue: [{ student, options: [{ mentor, result }], denials }]  (empty while auto is not empty)
+     */
+    plan(matches = [], denials = []) {
+        const state = this.poolState(matches, denials);
+
+        const pairs = [];
+        for (const student of this.students) {
+            if (state.matchedStudents.has(student.id)) continue;
+            for (const mentor of this.mentors) {
+                if (state.matchedMentors.has(mentor.id)) continue;
+                if (state.deniedPairs.has(`${student.id}|${mentor.id}`)) continue;
+                pairs.push({ student, mentor, result: this.calculateMatchScore(student, mentor) });
+            }
+        }
+
+        // Array.sort is stable, so equal scores keep submission order
+        const byScore = (a, b) => b.result.score - a.result.score;
+
+        // Step 1: automatic matches
+        const takenStudents = new Set();
+        const takenMentors = new Set();
+        const auto = [];
+        for (const pair of pairs.filter(p => p.result.isMatch).sort(byScore)) {
+            if (takenStudents.has(pair.student.id) || takenMentors.has(pair.mentor.id)) continue;
+            takenStudents.add(pair.student.id);
+            takenMentors.add(pair.mentor.id);
+            auto.push(pair);
+        }
+        if (auto.length > 0) return { auto, queue: [] };
+
+        // Step 2: two options per student for staff
+        const optionsByStudent = new Map();
+        for (const pair of pairs.filter(p => p.result.score > 0).sort(byScore)) {
+            const list = optionsByStudent.get(pair.student.id) || [];
+            if (list.length < 2) {
+                list.push({ mentor: pair.mentor, result: pair.result });
+                optionsByStudent.set(pair.student.id, list);
+            }
+        }
+
+        const unmatched = this.students.filter(s => !state.matchedStudents.has(s.id));
+        const entry = (student, options) => ({ student, options, denials: state.denialCounts.get(student.id) || 0 });
+
+        const withOptions = unmatched
+            .filter(s => optionsByStudent.has(s.id))
+            .map(s => entry(s, optionsByStudent.get(s.id)))
+            .sort((a, b) => a.denials - b.denials || b.options[0].result.score - a.options[0].result.score);
+
+        const withoutOptions = unmatched
+            .filter(s => !optionsByStudent.has(s.id))
+            .map(s => entry(s, []));
+
+        return { auto: [], queue: [...withOptions, ...withoutOptions] };
     }
 }
 
-// Export for use in HTML
+// Node export (used by matching-service.js and the scripts)
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = MatchingSystem;
 }

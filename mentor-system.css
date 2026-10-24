@@ -187,33 +187,36 @@ body {
   cursor: pointer;
 }
 
-/* Rating Groups */
-.rating-group {
-  display: flex;
-  gap: 10px;
-  margin-top: 10px;
+/* Checkbox fieldsets (legend styled like a label) */
+.check-fieldset {
+  border: 0;
+  min-width: 0;
 }
 
-.rating-label {
-  flex: 1;
-  text-align: center;
-  padding: 10px;
-  background: var(--app-surface);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s;
+.check-fieldset legend {
+  margin-bottom: 8px;
+  font-weight: 600;
+  color: var(--app-ink);
 }
 
-.rating-label:hover {
-  background: var(--sjsu-gold);
+/* Helper and error text */
+.hint {
+  color: var(--sjsu-dark-gray);
+  font-size: 0.9rem;
+  margin-top: 5px;
+  display: block;
 }
 
-.rating-label.selected {
-  background: var(--sjsu-blue);
-  color: white;
+.form-error {
+  margin-bottom: 15px;
+  padding: 12px 15px;
+  border-radius: 8px;
+  background: #fdecea;
+  border: 1px solid #b3261e;
+  color: #7a1b16;
 }
 
-.rating-label input {
+.form-error[hidden] {
   display: none;
 }
 
@@ -274,53 +277,9 @@ body {
   fill: white;
 }
 
-/* Match Cards */
-.matches-container {
-  padding: 40px;
-  display: none;
-}
-
-.match-card {
-  background: white;
-  border: 2px solid var(--sjsu-blue);
-  border-radius: 12px;
-  padding: 25px;
+.success-text {
   margin-bottom: 20px;
-  transition: box-shadow 0.3s;
-}
-
-.match-card:hover {
-  box-shadow: 0 6px 20px rgba(0, 85, 162, 0.2);
-}
-
-.match-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 15px;
-}
-
-.match-name {
-  font-size: 1.3rem;
-  color: var(--sjsu-blue);
-  font-weight: 600;
-}
-
-.match-score {
-  background: var(--sjsu-gold);
-  color: var(--app-ink);
-  padding: 8px 16px;
-  border-radius: 20px;
-  font-weight: 600;
-}
-
-.match-details {
-  color: #555;
-  line-height: 1.6;
-}
-
-.match-details strong {
-  color: var(--app-ink);
+  color: var(--sjsu-dark-gray);
 }
 
 /* Navigation Buttons */
