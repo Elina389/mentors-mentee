@@ -9,7 +9,9 @@
  * the server with MENTOR_MATCH_TODAY=2026-11-25 (YYYY-MM-DD).
  */
 
+const crypto = require('crypto');
 const store = require('./store.js');
+const MatchingSystem = require('./matching-algorithm.js');
 const matchingService = require('./matching-service.js');
 const cstore = require('./console-store.js');
 
@@ -384,6 +386,263 @@ function publicOrientation(audience) {
     };
 }
 
+// ---------- matches (cards) and unmatch all ----------
+
+const jobLineOf = m => [m.title, m.company].filter(Boolean).join(' at ');
+
+/** Undo is offered while there is a backup and nobody has been matched since. */
+function undoInfo(currentMatchCount) {
+    const backup = cstore.latestBackup('matches');
+    if (!backup || currentMatchCount > 0 || !Array.isArray(backup.data.matches)) return { available: false };
+    return { available: true, removed: backup.data.matches.length, savedAt: backup.data.savedAt, file: backup.path };
+}
+
+/** Every final match, joined with what the two people wrote on their forms. */
+function getMatchesView() {
+    const students = store.read('students');
+    const mentors = store.read('mentors');
+    const matches = store.read('matches');
+    const studentById = new Map(students.map(x => [x.id, x]));
+    const mentorById = new Map(mentors.map(x => [x.id, x]));
+
+    // Why each student is still waiting, using the same wording as the review page
+    const reasonByEmail = new Map(matchingService.getReviewState(new Set()).unmatched.map(u => [u.email, u.reason]));
+    const matchedStudentIds = new Set(matches.map(m => m.studentId));
+
+    return {
+        today: today(),
+        unmatchedStudents: students.filter(x => !matchedStudentIds.has(x.id)).map(x => ({
+            id: x.id,
+            name: x.name,
+            email: x.email,
+            major: x.major || '',
+            field: MatchingSystem.majorFieldOf(x.major) || '',
+            year: x.year || '',
+            status: reasonByEmail.get(x.email) || 'No match yet'
+        })),
+        counts: {
+            matches: matches.length,
+            students: students.length,
+            mentors: mentors.length,
+            studentsWithoutMatch: students.length - new Set(matches.map(m => m.studentId)).size,
+            mentorsWithoutMatch: mentors.length - new Set(matches.map(m => m.mentorId)).size
+        },
+        undo: undoInfo(matches.length),
+        matches: matches.map(m => {
+            const student = studentById.get(m.studentId);
+            const mentor = mentorById.get(m.mentorId);
+            return {
+                id: m.id,
+                studentId: m.studentId,
+                mentorId: m.mentorId,
+                percentage: m.percentage,
+                method: m.method,
+                matchedAt: m.matchedAt,
+                student: {
+                    name: student ? student.name : m.studentName,
+                    email: student ? student.email : m.studentEmail,
+                    major: student ? student.major || '' : '',
+                    field: (student && MatchingSystem.majorFieldOf(student.major)) || '',
+                    year: student ? student.year || '' : ''
+                },
+                mentor: {
+                    name: mentor ? mentor.name : m.mentorName,
+                    email: mentor ? mentor.email : m.mentorEmail,
+                    job: mentor ? jobLineOf(mentor) : '',
+                    expertise: mentor ? mentor.expertise || [] : []
+                }
+            };
+        })
+    };
+}
+
+/**
+ * Remove every match. Students and mentors go back into the pool, so matching can
+ * run again. A copy is saved to data/backups first, and the "match emails sent" date
+ * is cleared because those emails were about the matches being removed.
+ * Optionally also forgets the pairs staff denied, so every pair is offered again.
+ * The survey responses are never touched.
+ */
+function unmatchAll({ confirm, forgetDenials }) {
+    if (confirm !== true) throw new HttpError(400, 'Send confirm: true to unmatch everyone');
+    if (forgetDenials !== undefined && typeof forgetDenials !== 'boolean') throw new HttpError(400, 'forgetDenials must be true or false');
+
+    const matches = store.read('matches');
+    if (matches.length === 0) throw new HttpError(400, 'There are no matches to remove');
+    const program = readProgram();
+    const denials = forgetDenials ? store.read('decisions') : null;
+
+    // Back up first: if this fails, nothing has been deleted
+    const backup = cstore.writeBackup('matches', {
+        savedAt: new Date().toISOString(),
+        matches,
+        emailsSentAt: program.emailsSentAt,
+        decisions: denials
+    });
+
+    store.write('matches', []);
+    if (forgetDenials) store.write('decisions', []);
+    if (program.emailsSentAt) cstore.write('program', { ...program, emailsSentAt: null });
+
+    return { removed: matches.length, backup, forgotDenials: Boolean(forgetDenials), view: getMatchesView() };
+}
+
+/** Put back the matches from the last "unmatch all", if nobody has been matched since. */
+function undoUnmatch() {
+    const backup = cstore.latestBackup('matches');
+    if (!backup || !Array.isArray(backup.data.matches)) throw new HttpError(404, 'There is nothing to undo');
+    if (store.read('matches').length > 0) {
+        throw new HttpError(409, `New matches have been made since, so undo would replace them. The old matches are still saved in ${backup.path}.`);
+    }
+
+    store.write('matches', backup.data.matches);
+    if (Array.isArray(backup.data.decisions)) {
+        // Keep any denials made since, and bring back the ones that were forgotten
+        const current = store.read('decisions');
+        const known = new Set(current.map(d => d.id));
+        store.write('decisions', [...backup.data.decisions.filter(d => !known.has(d.id)), ...current]);
+    }
+    const program = readProgram();
+    if (backup.data.emailsSentAt && !program.emailsSentAt) {
+        cstore.write('program', { ...program, emailsSentAt: backup.data.emailsSentAt });
+    }
+    cstore.removeBackup(backup.name);
+
+    return getMatchesView();
+}
+
+// ---------- fixing individual matches ----------
+
+/** Remember that staff said no to this pair, so automatic matching does not bring it back. */
+function recordBlockedPair(studentId, mentorId, source) {
+    const denials = store.read('decisions');
+    const already = denials.some(d => d.studentId === studentId &&
+        (Array.isArray(d.mentorIds) ? d.mentorIds : [d.mentorId]).includes(mentorId));
+    if (already) return;
+    denials.push({
+        id: crypto.randomUUID(),
+        studentId,
+        mentorIds: [mentorId],
+        decision: 'denied',
+        decidedAt: new Date().toISOString(),
+        source
+    });
+    store.write('decisions', denials);
+}
+
+/**
+ * Every mentor this student could be matched with, best fit first. Mentors who
+ * already have a different student are left out. The student's current mentor,
+ * if any, is included and marked so it cannot be picked again.
+ */
+function getCandidates(studentId) {
+    if (typeof studentId !== 'string' || !studentId) throw new HttpError(400, 'Send the student id');
+
+    const students = store.read('students');
+    const mentors = store.read('mentors');
+    const matches = store.read('matches');
+    const student = students.find(x => x.id === studentId);
+    if (!student) throw new HttpError(404, 'Student not found');
+
+    const system = new MatchingSystem(students, mentors);
+    const { deniedPairs } = system.poolState(matches, store.read('decisions'));
+    const current = matches.find(m => m.studentId === studentId) || null;
+    const takenByOthers = new Set(matches.filter(m => m !== current).map(m => m.mentorId));
+
+    const candidates = mentors
+        .filter(m => !takenByOthers.has(m.id))
+        .map(m => {
+            const result = system.calculateMatchScore(student, m);
+            return {
+                score: result.score,
+                id: m.id,
+                name: m.name,
+                email: m.email,
+                job: jobLineOf(m),
+                expertise: m.expertise || [],
+                percentage: result.percentage,
+                details: result.details,
+                denied: deniedPairs.has(`${student.id}|${m.id}`),
+                current: Boolean(current && current.mentorId === m.id)
+            };
+        })
+        .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
+        .map(({ score, ...rest }) => rest);
+
+    return {
+        student: {
+            id: student.id,
+            name: student.name,
+            major: student.major || '',
+            field: MatchingSystem.majorFieldOf(student.major) || '',
+            year: student.year || '',
+            passion: String(student.passion || '').slice(0, 300)
+        },
+        current: current && { matchId: current.id, mentorId: current.mentorId, mentorName: current.mentorName, percentage: current.percentage },
+        candidates
+    };
+}
+
+/**
+ * Match a student with a mentor by hand.
+ *  - A student with no match gets this mentor.
+ *  - A student who is already matched is moved to this mentor ("change mentor"), and the old pair is
+ *    remembered as blocked unless blockPair is false.
+ * The mentor must be free: a mentor who has another student has to be unmatched first.
+ */
+function manualMatch({ studentId, mentorId, blockPair }) {
+    if (typeof studentId !== 'string' || typeof mentorId !== 'string') throw new HttpError(400, 'Send studentId and mentorId');
+    if (blockPair !== undefined && typeof blockPair !== 'boolean') throw new HttpError(400, 'blockPair must be true or false');
+
+    const students = store.read('students');
+    const mentors = store.read('mentors');
+    const matches = store.read('matches');
+    const student = students.find(x => x.id === studentId);
+    const mentor = mentors.find(x => x.id === mentorId);
+    if (!student) throw new HttpError(404, 'Student not found');
+    if (!mentor) throw new HttpError(404, 'Mentor not found');
+
+    const current = matches.find(m => m.studentId === studentId) || null;
+    if (current && current.mentorId === mentorId) throw new HttpError(400, `${student.name} is already matched with ${mentor.name}`);
+    if (matches.some(m => m.mentorId === mentorId && m !== current)) {
+        throw new HttpError(409, `${mentor.name} is already matched with another student. Unmatch that pair first.`);
+    }
+
+    const percentage = new MatchingSystem(students, mentors).calculateMatchScore(student, mentor).percentage;
+    const record = store.makeMatchRecord(student, mentor, percentage, 'staff');
+    store.write('matches', [...matches.filter(m => m !== current), record]);
+    if (current && blockPair !== false) recordBlockedPair(current.studentId, current.mentorId, 'rematch');
+
+    return {
+        matched: { studentName: student.name, mentorName: mentor.name, percentage },
+        replaced: current ? { mentorName: current.mentorName } : null,
+        view: getMatchesView()
+    };
+}
+
+/**
+ * Remove one match. Both people go back into the pool. Unless blockPair is false,
+ * the pair is remembered as blocked: automatic matching runs whenever Match review
+ * is opened, and would otherwise put them straight back together.
+ */
+function unmatchOne({ matchId, blockPair }) {
+    if (typeof matchId !== 'string') throw new HttpError(400, 'Send matchId');
+    if (blockPair !== undefined && typeof blockPair !== 'boolean') throw new HttpError(400, 'blockPair must be true or false');
+
+    const matches = store.read('matches');
+    const target = matches.find(m => m.id === matchId);
+    if (!target) throw new HttpError(404, 'That match no longer exists');
+
+    store.write('matches', matches.filter(m => m !== target));
+    if (blockPair !== false) recordBlockedPair(target.studentId, target.mentorId, 'unmatch');
+
+    return {
+        removed: { studentName: target.studentName, mentorName: target.mentorName },
+        blockedPair: blockPair !== false,
+        view: getMatchesView()
+    };
+}
+
 // ---------- match emails ----------
 // This app does not send email. Staff send the introductions themselves
 // (the CSV has everything they need) and then record that it's done.
@@ -417,5 +676,7 @@ module.exports = {
     getSummary, getParticipants, getLessons, setCadence, setAttendance,
     getHomework, setHomework, getAnalytics,
     getOrientation, saveOrientation, publicOrientation,
-    setEmailsSent, matchesCsv
+    setEmailsSent, matchesCsv,
+    getMatchesView, unmatchAll, undoUnmatch,
+    getCandidates, manualMatch, unmatchOne
 };

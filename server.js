@@ -32,6 +32,8 @@ const STATIC_FILES = {
     '/console.js': ['console.js', 'text/javascript; charset=utf-8'],
     '/staff-orientation.html': ['staff-orientation.html', 'text/html; charset=utf-8'],
     '/staff-orientation.js': ['staff-orientation.js', 'text/javascript; charset=utf-8'],
+    '/matches.html': ['matches.html', 'text/html; charset=utf-8'],
+    '/matches.js': ['matches.js', 'text/javascript; charset=utf-8'],
     '/participants.html': ['participants.html', 'text/html; charset=utf-8'],
     '/participants.js': ['participants.js', 'text/javascript; charset=utf-8'],
     '/lessons.html': ['lessons.html', 'text/html; charset=utf-8'],
@@ -381,6 +383,12 @@ const ROUTES = [
 
     { method: 'GET',  path: '/api/console/summary',        staff: true,  handler: consoleGet(() => consoleService.getSummary()) },
     { method: 'GET',  path: '/api/console/participants',   staff: true,  handler: consoleGet(() => consoleService.getParticipants()) },
+    { method: 'GET',  path: '/api/console/matches',        staff: true,  handler: consoleGet(() => consoleService.getMatchesView()) },
+    { method: 'POST', path: '/api/console/unmatch-all',    staff: true,  handler: consolePost(body => consoleService.unmatchAll(body)) },
+    { method: 'GET',  path: '/api/console/candidates',      staff: true,  handler: consoleGet(req => consoleService.getCandidates(new URL(req.url, 'http://localhost').searchParams.get('student'))) },
+    { method: 'POST', path: '/api/console/match',           staff: true,  handler: consolePost(body => consoleService.manualMatch(body)) },
+    { method: 'POST', path: '/api/console/unmatch',         staff: true,  handler: consolePost(body => consoleService.unmatchOne(body)) },
+    { method: 'POST', path: '/api/console/unmatch-undo',   staff: true,  handler: consolePost(() => consoleService.undoUnmatch()) },
     { method: 'GET',  path: '/api/console/lessons',        staff: true,  handler: consoleGet(() => consoleService.getLessons()) },
     { method: 'POST', path: '/api/console/cadence',        staff: true,  handler: consolePost(body => consoleService.setCadence(body)) },
     { method: 'POST', path: '/api/console/attendance',     staff: true,  handler: consolePost(body => consoleService.setAttendance(body)) },
@@ -395,7 +403,7 @@ const ROUTES = [
 
 // Pages only staff can open. Everyone else is sent to the sign-in page.
 const STAFF_PAGES = new Set([
-    '/review.html', '/dashboard.html', '/staff-orientation.html', '/participants.html',
+    '/review.html', '/matches.html', '/dashboard.html', '/staff-orientation.html', '/participants.html',
     '/lessons.html', '/homework.html', '/analytics.html'
 ]);
 

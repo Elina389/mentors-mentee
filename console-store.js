@@ -35,4 +35,34 @@ function write(name, data) {
     fs.renameSync(tmp, fileFor(name));
 }
 
-module.exports = { read, write };
+// ---------- backups (written before anything is deleted, so it can be undone) ----------
+
+const BACKUP_DIR = path.join(DATA_DIR, 'backups');
+
+/** Save a copy to data/backups/<prefix>-<timestamp>.json. Returns its path relative to the project. */
+function writeBackup(prefix, data) {
+    fs.mkdirSync(BACKUP_DIR, { recursive: true });
+    const name = `${prefix}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+    fs.writeFileSync(path.join(BACKUP_DIR, name), JSON.stringify(data, null, 2) + '\n');
+    return `data/backups/${name}`;
+}
+
+/** The newest backup for a prefix, or null. */
+function latestBackup(prefix) {
+    let names;
+    try {
+        names = fs.readdirSync(BACKUP_DIR);
+    } catch (err) {
+        if (err.code === 'ENOENT') return null;
+        throw err;
+    }
+    const name = names.filter(n => n.startsWith(`${prefix}-`) && n.endsWith('.json')).sort().pop();
+    if (!name) return null;
+    return { name, path: `data/backups/${name}`, data: JSON.parse(fs.readFileSync(path.join(BACKUP_DIR, name), 'utf8')) };
+}
+
+function removeBackup(name) {
+    fs.unlinkSync(path.join(BACKUP_DIR, path.basename(name)));
+}
+
+module.exports = { read, write, writeBackup, latestBackup, removeBackup };

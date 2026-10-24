@@ -9,6 +9,7 @@
     const TABS = [
         ['/staff-orientation.html', 'Orientation'],
         ['/review.html', 'Match review'],
+        ['/matches.html', 'Matches'],
         ['/participants.html', 'Participants'],
         ['/lessons.html', 'Lessons & attendance'],
         ['/homework.html', 'Homework'],

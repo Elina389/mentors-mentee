@@ -872,3 +872,308 @@ button.mark { cursor: pointer; }
 .dash-body.flush {
   padding: 0;
 }
+
+/* ---------- matches page ---------- */
+.panel input[type="search"] {
+  flex: 1;
+  min-width: 180px;
+  max-width: 300px;
+  padding: 6px 10px;
+  border: 1px solid var(--c-line);
+  border-radius: 6px;
+  background: white;
+  color: var(--app-ink);
+  font: inherit;
+}
+
+.toolbar.controls {
+  margin-bottom: 14px;
+}
+
+.match-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(440px, 100%), 1fr));
+  gap: 14px;
+}
+
+.mcard {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--c-line);
+  border-left: 4px solid var(--sjsu-blue);
+  border-radius: 10px;
+  background: white;
+}
+
+.mcard-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.mcard .pct {
+  font-size: 1.9rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--sjsu-blue);
+  font-variant-numeric: tabular-nums;
+}
+
+.mcard .pct.low {
+  color: var(--c-gold-ink);
+}
+
+.pair-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.mperson {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--app-surface);
+}
+
+.mperson .chip {
+  justify-self: start;
+  margin-bottom: 2px;
+}
+
+.mperson h3 {
+  overflow-wrap: anywhere;
+}
+
+.mperson .addr {
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.pair-arrow {
+  align-self: center;
+  color: var(--sjsu-gold);
+  font-size: 1.6rem;
+  font-weight: 800;
+}
+
+.mcard-foot {
+  font-size: 0.85rem;
+}
+
+@media (max-width: 480px) {
+  .pair-row { grid-template-columns: 1fr; }
+  .pair-arrow { justify-self: center; transform: rotate(90deg); }
+}
+
+/* confirmation before unmatching everyone */
+.confirmbar {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--c-bad);
+  border-left-width: 5px;
+  border-radius: 8px;
+  background: var(--c-bad-soft);
+  color: var(--app-ink);
+}
+
+.confirmbar h3 {
+  color: var(--c-bad);
+}
+
+.confirmbar p {
+  margin: 0;
+  max-width: 70ch;
+}
+
+.confirmbar .actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.confirmbar label.check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  cursor: pointer;
+}
+
+.confirmbar input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--c-bad);
+}
+
+#notice,
+#matchError {
+  margin-bottom: 14px;
+}
+
+#matchSummary {
+  margin-bottom: 14px;
+}
+
+/* Elements with a display of their own (buttons, bars) must still disappear when hidden */
+[hidden] {
+  display: none !important;
+}
+
+/* ---------- fixing individual matches ---------- */
+.mcard-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.card-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.mcard.open {
+  border-left-color: var(--sjsu-gold);
+}
+
+.inline-confirm {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--c-bad);
+  border-left-width: 4px;
+  border-radius: 8px;
+  background: var(--c-bad-soft);
+}
+
+.inline-confirm p {
+  margin: 0;
+}
+
+.inline-confirm .actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+label.check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  cursor: pointer;
+}
+
+label.check input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--sjsu-blue);
+}
+
+.inline-confirm label.check input[type="checkbox"] {
+  accent-color: var(--c-bad);
+}
+
+/* mentor picker (a native dialog: it traps focus and closes with Escape) */
+dialog.picker {
+  /* The site-wide reset sets every margin to 0, which would pin a modal to the top-left corner */
+  margin: auto;
+  width: min(760px, calc(100% - 32px));
+  max-height: 85vh;
+  padding: 18px;
+  border: 1px solid var(--c-line);
+  border-radius: 10px;
+  background: white;
+  color: var(--app-ink);
+  overflow: auto;
+}
+
+dialog.picker::backdrop {
+  background: rgba(21, 32, 51, 0.5);
+}
+
+.picker-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.picker-head h3 {
+  margin: 0;
+  color: var(--sjsu-blue);
+  font-size: 1.25rem;
+  overflow-wrap: anywhere;
+}
+
+.picker-head p {
+  margin: 4px 0 0;
+}
+
+.picker-block {
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--app-surface);
+}
+
+.picker-list {
+  display: grid;
+  gap: 8px;
+}
+
+.cand {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 90px auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--c-line);
+  border-radius: 8px;
+}
+
+.cand.is-current {
+  background: var(--c-blue-soft);
+  border-color: var(--sjsu-blue);
+}
+
+.cand-main {
+  min-width: 0;
+}
+
+.cand-main h4 {
+  margin: 0 0 2px;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.cand .why {
+  font-size: 0.85rem;
+}
+
+.cand-pct .pct {
+  font-size: 1.4rem;
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--sjsu-blue);
+  font-variant-numeric: tabular-nums;
+}
+
+.cand-pct .pct.low {
+  color: var(--c-gold-ink);
+}
+
+@media (max-width: 520px) {
+  .cand { grid-template-columns: minmax(0, 1fr) auto; }
+  .cand-pct { grid-column: 1; }
+  .cand button { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+}

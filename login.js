@@ -9,7 +9,7 @@
     const button = form.querySelector('button[type="submit"]');
 
     // Only these pages can be the destination, so the link can't send staff elsewhere
-    const ALLOWED_NEXT = ['/review.html', '/dashboard.html', '/staff-orientation.html', '/participants.html',
+    const ALLOWED_NEXT = ['/review.html', '/matches.html', '/dashboard.html', '/staff-orientation.html', '/participants.html',
         '/lessons.html', '/homework.html', '/analytics.html'];
     const requested = new URLSearchParams(window.location.search).get('next');
     const destination = ALLOWED_NEXT.includes(requested) ? requested : '/review.html';

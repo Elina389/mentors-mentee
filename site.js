@@ -13,7 +13,7 @@
     const normalize = path => (path === '/' ? '/index.html' : path);
 
     // Every page of the staff console counts as "Staff console" in the main nav
-    const STAFF_PAGES = ['/review.html', '/dashboard.html', '/staff-orientation.html', '/participants.html',
+    const STAFF_PAGES = ['/review.html', '/matches.html', '/dashboard.html', '/staff-orientation.html', '/participants.html',
         '/lessons.html', '/homework.html', '/analytics.html'];
 
     function markCurrent() {
